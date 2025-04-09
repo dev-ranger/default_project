@@ -89,6 +89,7 @@ class _ImagePredictionPageState extends State<ImagePredictionPage> {
   // 상태 변수들
   File? selectedImage;
   String predictionResult = "";
+  Map<String, double> predictionMap = {}; // 예측 결과를 저장할 맵 변수 추가
   bool isLoading = false;
 
   // 컨트롤러 및 서비스
@@ -126,6 +127,7 @@ class _ImagePredictionPageState extends State<ImagePredictionPage> {
           selectedImage = File(pickedImage.path);
           // 이미지가 새로 선택되면 이전 예측 결과 초기화
           predictionResult = "";
+          predictionMap = {}; // 예측 맵 초기화
         });
       }
     } catch (e) {
@@ -135,19 +137,21 @@ class _ImagePredictionPageState extends State<ImagePredictionPage> {
 
   /// 선택된 이미지로 예측 수행
   Future<void> performImagePrediction() async {
-    // 이미지가 선택되지 않은 경우 처리
+    // A. 이미지가 선택되지 않은 경우 처리
     if (selectedImage == null) {
       setState(() {
         predictionResult = AppConstants.noImageError;
+        predictionMap = {}; // 맵 초기화
       });
       showErrorSnackBar(AppConstants.noImageError);
       return;
     }
 
-    // 예측 시작 (로딩 상태 설정)
+    // B. 예측 시작 (로딩 상태 설정)
     setState(() {
       isLoading = true;
       predictionResult = AppConstants.loadingMessage;
+      predictionMap = {}; // 맵 초기화
     });
 
     try {
@@ -159,11 +163,13 @@ class _ImagePredictionPageState extends State<ImagePredictionPage> {
       setState(() {
         isLoading = false;
         predictionResult = formatPredictionResults(response);
+        predictionMap = extractPredictionMap(response); // 맵으로 결과 추출
       });
     } catch (e) {
       setState(() {
         isLoading = false;
         predictionResult = '오류 발생: $e';
+        predictionMap = {}; // 오류 시 맵 비우기
       });
       showErrorSnackBar(e.toString());
     }
@@ -215,12 +221,41 @@ class _ImagePredictionPageState extends State<ImagePredictionPage> {
   /// 예측 결과를 포맷팅
   String formatPredictionResults(Map<String, dynamic> data) {
     try {
-      final predictions = data['predictions'] as Map<String, dynamic>;
-      return predictions.entries
+      // 'predictions' 키가 있는 경우와 없는 경우를 모두 처리
+      Map<String, dynamic> predictions;
+      if (data.containsKey('predictions')) {
+        predictions = data['predictions'] as Map<String, dynamic>;
+      } else {
+        // 'predictions' 키가 없으면 응답 자체가 예측 결과임
+        predictions = data;
+      }
+
+      final sortedEntries = predictions.entries.toList()
+        ..sort((a, b) => (b.value as num).compareTo(a.value as num));
+
+      return sortedEntries
           .map((e) => '${e.key}: ${formatProbability(e.value)}')
           .join('\n');
     } catch (e) {
       return '결과 형식 오류: $e';
+    }
+  }
+
+  /// 예측 결과를 맵으로 추출
+  Map<String, double> extractPredictionMap(Map<String, dynamic> data) {
+    try {
+      Map<String, dynamic> predictions;
+      if (data.containsKey('predictions')) {
+        predictions = data['predictions'] as Map<String, dynamic>;
+      } else {
+        predictions = data;
+      }
+
+      return predictions.map((key, value) =>
+          MapEntry(key, value is double ? value : double.tryParse(value.toString()) ?? 0.0));
+    } catch (e) {
+      print('예측 맵 추출 오류: $e');
+      return {};
     }
   }
 
@@ -364,9 +399,14 @@ class _ImagePredictionPageState extends State<ImagePredictionPage> {
 
   /// 예측 결과 표시 영역 구성
   Widget _buildResultDisplay() {
-    if (predictionResult.isEmpty) {
+    // predictionMap이 비어있으면 아무것도 표시하지 않음
+    if (predictionMap.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    // 결과를 내림차순으로 정렬 (확률이 높은 것이 먼저 표시)
+    final sortedEntries = predictionMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
     return Card(
       elevation: 4,
@@ -376,26 +416,68 @@ class _ImagePredictionPageState extends State<ImagePredictionPage> {
       child: Padding(
         padding: const EdgeInsets.all(AppConstants.defaultPadding),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '예측 결과',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            const Center(
+              child: Text(
+                '예측 결과',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             const Divider(),
             const SizedBox(height: 8),
-            Text(
-              predictionResult,
-              style: const TextStyle(
-                fontSize: AppConstants.resultFontSize,
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            ...sortedEntries.map((entry) => _buildPredictionItem(entry.key, entry.value)),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 개별 예측 항목 위젯
+  Widget _buildPredictionItem(String label, double probability) {
+    // 확률에 따라 색상 결정 (확률이 높을수록 더 진한 색상)
+    final color = HSLColor.fromAHSL(
+      1.0,
+      220, // 색조(hue) - 파란색 계열
+      0.8, // 채도(saturation)
+      0.3 + (0.4 * probability), // 명도(lightness) - 확률에 따라 조정
+    ).toColor();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                label.toUpperCase(), // 대문자로 표시하여 가독성 향상
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                formatProbability(probability),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: probability,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+              minHeight: 12,
+            ),
+          ),
+        ],
       ),
     );
   }

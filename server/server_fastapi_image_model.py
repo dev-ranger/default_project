@@ -19,8 +19,8 @@ from tensorflow.keras.layers import TFSMLayer
 import os
 
 # 상수 정의
-MODEL_PATH = "./"
-MODEL_ENDPOINT = "serving_default"
+MODEL_PATH = "../../model/"
+MODEL_ENDPOINT = "vgg16"
 HOST = "127.0.0.1"
 PORT = 8000
 IMAGE_SIZE = (224, 224)
@@ -57,7 +57,8 @@ app.add_middleware(
 )
 
 def load_model():
-    model_path = os.path.expanduser('./base_model.keras')
+    model_path = os.path.expanduser('../../model/base_model.keras')
+
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
     model = tf.keras.models.load_model(model_path)
@@ -95,7 +96,6 @@ def preprocess_image(image: Image.Image, target_size: Tuple[int, int] = IMAGE_SI
     except Exception as e:
         raise ValueError(f"이미지 전처리 실패: {e}")
 
-
 def predict_image(image: Image.Image) -> Dict[str, float]:
     """
     전처리된 이미지에 대해 모델 예측을 수행합니다.
@@ -118,16 +118,16 @@ def predict_image(image: Image.Image) -> Dict[str, float]:
         
         # 모델 예측 수행
         try:
-            predictions = model(preprocessed_img, training=False)  # 모델 호출
-            logger.info(f"예측 결과 딕셔너리 키: {predictions.keys()}")
+            # 모델 호출 - EagerTensor로 반환됨
+            predictions = model(preprocessed_img, training=False)
+            logger.info(f"예측 결과 형태: {predictions.shape}, 타입: {type(predictions)}")
             
-            # 모델 출력 키 확인
-            output_key = list(predictions.keys())[0]  # 첫 번째 키 사용
-            outputs = predictions[output_key]  # 출력 값 가져오기
-            logger.info(f"모델 출력: {outputs.numpy()}")
+            # EagerTensor는 바로 numpy 배열로 변환
+            outputs = predictions.numpy()
             
-            # 확률화
+            # 소프트맥스 적용하여 확률로 변환
             probabilities = tf.nn.softmax(outputs[0]).numpy()
+            
         except Exception as prediction_error:
             logger.error(f"모델 호출 실패: {prediction_error}")
             raise HTTPException(
