@@ -1,0 +1,25 @@
+[project]
+name = "pyone-t5"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "One Yoon",email = "one2eun2@naver.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "fastapi (>=0.115.11,<0.116.0)",
+    "uvicorn[standard] (>=0.34.0,<0.35.0)",
+    "tensorflow (>=2.10.1)",
+    "numpy (>=1.23.5,<1.24.0)",
+    "pillow (>=11.1.0,<12.0.0)",
+    "python-multipart (>=0.0.20,<0.0.21)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+package-mode = false
